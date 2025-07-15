@@ -1,27 +1,29 @@
-FROM node:22.12-alpine AS builder
+# Use official Python image as base
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Copy package.json and package-lock.json first for better layer caching
-COPY package*.json ./
-COPY tsconfig.json ./
+# Copy requirements for better layer caching
+COPY requirements.txt ./
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
 COPY src/ ./src/
+COPY .env .env
 
-RUN --mount=type=cache,target=/root/.npm npm install
-
-RUN npm run build
-
-FROM node:22-alpine AS release
+FROM python:3.12-slim AS release
 
 WORKDIR /app
 
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/package-lock.json ./
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/.env .env
+COPY requirements.txt .
 
-ENV NODE_ENV=production
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 ENV PORT=80
 
-RUN npm ci --ignore-scripts --omit-dev
-
-CMD ["node", "dist/server.js"]
+CMD ["python", "-m", "src.server"]
